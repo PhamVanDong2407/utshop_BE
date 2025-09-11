@@ -20,7 +20,7 @@ router.post("/verify-forgot-password-otp", async (req, res, next) => {
   }
 });
 
-// API đặt lâi mật khẻ
+// API đặt lại mật khẩu
 router.post("/reset-password", async (req, res, next) => {
   try {
     res.json(await controller.resetPassword(req.body));
