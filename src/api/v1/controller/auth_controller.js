@@ -143,9 +143,45 @@ async function refreshToken(body) {
   }
 }
 
+async function changePassword(uuid, body) {
+  try {
+    const { oldPassword, newPassword } = body;
+
+    if (!oldPassword || !newPassword) {
+      const error = new Error("Thiếu thông tin bắt buộc!");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const [user] = await db.execute(
+      `SELECT uuid FROM user WHERE uuid = ? AND password = ?`,
+      [uuid, oldPassword]
+    );
+
+    if (!user) {
+      const error = new Error("Mật khẩu cũ không chính xác!");
+      error.statusCode = 401;
+      throw error;
+    }
+
+    await db.execute(`UPDATE user SET password = ? WHERE uuid = ?`, [
+      newPassword,
+      uuid,
+    ]);
+
+    return {
+      code: 200,
+      message: "Đổi mật khẩu thành công!",
+    };
+  } catch (error) {
+    throw error;
+  }
+}
+
 module.exports = {
   register,
   verifyOtp,
   login,
   refreshToken,
+  changePassword,
 };

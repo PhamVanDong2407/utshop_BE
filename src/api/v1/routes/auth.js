@@ -39,4 +39,13 @@ router.post("/refresh-token", async (req, res, next) => {
   }
 });
 
+// API đổi mật khẩu
+router.put("/change-password", checkLogin, async (req, res, next) => {
+  try {
+    res.json(await controller.changePassword(req.payload.id, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;
