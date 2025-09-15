@@ -63,43 +63,106 @@ async function verifyOtp(body) {
   };
 }
 
-async function login(body) {
-  const { email, password } = body;
-
-  const [user] = await db.execute(`SELECT * FROM user WHERE email = ?`, [
-    email,
-  ]);
-  if (!user) {
-    const error = new Error("Tài khoản không tồn tại!");
+async function login(userInput) {
+  if (!userInput || !userInput.email || !userInput.password) {
+    const error = new Error("Tên đăng nhập và mật khẩu không được để trống!");
     error.statusCode = 400;
     throw error;
   }
 
-  if (user.password !== password) {
-    const error = new Error("Sai mật khẩu!");
-    error.statusCode = 401;
-    throw error;
+  try {
+    const [rows] = await db.execute(
+      `
+      SELECT  
+        uuid,
+        permission_id,
+        name,
+        gender,
+        birth_day,
+        phone,
+        email,
+        username,
+        avatar,
+        province,
+        district,
+        status
+      FROM user  
+      WHERE  
+        email = ? AND password = ?
+      `,
+      [userInput.email, userInput.password]
+    );
+
+    if (!rows) {
+      const error = new Error(
+        "Thông tin tài khoản hoặc mật khẩu không chính xác!"
+      );
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const user = rows;
+
+    if (typeof user.status === "undefined") {
+      const error = new Error(
+        "Cột status không tồn tại trong dữ liệu người dùng!"
+      );
+      error.statusCode = 500;
+      throw error;
+    }
+
+    if (user.status === 0) {
+      const error = new Error("Tài khoản này đã bị khóa!");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const tokens = await signAccessToken(user.uuid);
+
+    await db.queryMultiple([
+      `DELETE FROM token WHERE user_id = '${user.uuid}'`,
+      `
+        INSERT INTO token (
+          uuid,
+          user_id,
+          access_token,
+          refresh_token
+        )
+        VALUES (
+          UUID(),
+          '${user.uuid}',
+          '${tokens.access_token}',
+          '${tokens.refresh_token}'
+        )
+      `,
+    ]);
+
+    return {
+      code: 200,
+      message: "Đăng nhập thành công!",
+      data: {
+        uuid: user.uuid ?? null,
+        permission: user.permission_id ?? null,
+        name: user.name ?? null,
+        gender: user.gender ?? null,
+        birth_day: user.birth_day ?? null,
+        phone: user.phone ?? null,
+        email: user.email ?? null,
+        username: user.username ?? null,
+        avatar: user.avatar ?? null,
+        province: user.province ?? null,
+        district: user.district ?? null,
+      },
+      tokens,
+    };
+  } catch (error) {
+    console.error("Lỗi trong quá trình đăng nhập:", error);
+    const err = new Error(
+      error.message || "Lỗi máy chủ, vui lòng thử lại sau!"
+    );
+    err.statusCode = error.statusCode || 500;
+    throw err;
   }
-
-  if (user.status === 0) {
-    const error = new Error("Tài khoản chưa được kích hoạt!");
-    error.statusCode = 403;
-    throw error;
-  }
-
-  const tokens = await signAccessToken(user.uuid);
-
-  await db.queryMultiple([
-    `DELETE FROM token WHERE user_id = '${user.uuid}'`,
-    `INSERT INTO token (uuid, user_id, access_token, refresh_token) 
-     VALUES (UUID(), '${user.uuid}', '${tokens.access_token}', '${tokens.refresh_token}')`,
-  ]);
-
-  return {
-    code: 200,
-    message: "Đăng nhập thành công!",
-    tokens,
-  };
 }
 
 async function refreshToken(body) {
