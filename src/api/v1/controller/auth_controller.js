@@ -85,6 +85,7 @@ async function login(userInput) {
         avatar,
         province,
         district,
+        address,
         status
       FROM user  
       WHERE  
@@ -152,6 +153,7 @@ async function login(userInput) {
         avatar: user.avatar ?? null,
         province: user.province ?? null,
         district: user.district ?? null,
+        address: user.address ?? null,
       },
       tokens,
     };
