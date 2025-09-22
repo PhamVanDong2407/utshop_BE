@@ -80,114 +80,58 @@ async function getDetailInfo(id) {
 
 async function updateInfo(uuid, body) {
   try {
-    if (!uuid || typeof uuid !== "string") {
-      const error = new Error("ID người dùng không hợp lệ!");
+    if (!body.name || body.name.trim() === "") {
+      const error = new Error("Vui lòng nhập tên!");
       error.statusCode = 400;
       throw error;
     }
 
-    if (
-      !body.name ||
-      typeof body.name !== "string" ||
-      body.name.trim() === ""
-    ) {
-      const error = new Error("Vui lòng nhập tên người dùng!");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    if (
-      !body.phone ||
-      typeof body.phone !== "string" ||
-      body.phone.trim() === ""
-    ) {
+    if (!body.phone || body.phone.trim() === "") {
       const error = new Error("Vui lòng nhập số điện thoại!");
       error.statusCode = 400;
       throw error;
     }
 
-    if (
-      !body.email ||
-      typeof body.email !== "string" ||
-      body.email.trim() === ""
-    ) {
-      const error = new Error("Vui lòng nhập email!");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(body.email)) {
-      const error = new Error("Email không hợp lệ!");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const phoneRegex = /^\d{10}$/;
-    if (!phoneRegex.test(body.phone)) {
-      const error = new Error("Số điện thoại không hợp lệ!");
-      error.statusCode = 400;
-      throw error;
-    }
-
-    const updateFields = {
-      avatar: body.avatar || null,
-      name: body.name,
-      gender: body.gender || null,
-      birth_day: body.birth_day || null,
-      phone: body.phone,
-      email: body.email,
-      province: body.province || null,
-      district: body.district || null,
-      address: body.address || null,
-    };
-
-    const [result] = await db.execute(
-      `
-      UPDATE user
-      SET
-        avatar = ?,
-        name = ?,
-        gender = ?,
-        birth_day = ?,
-        phone = ?,
-        email = ?,
-        province = ?,
-        district = ?,
-        address = ?
-      WHERE uuid = ?
-      `,
-      [
-        updateFields.avatar,
-        updateFields.name,
-        updateFields.gender,
-        updateFields.birth_day,
-        updateFields.phone,
-        updateFields.email,
-        updateFields.province,
-        updateFields.district,
-        updateFields.address,
-        uuid,
-      ]
+    let avatar = null;
+    const [rows] = await db.execute(
+      `SELECT \`avatar\` FROM \`user\` WHERE \`uuid\` = '${uuid}'`
     );
 
-    if (result.affectedRows === 0) {
-      const error = new Error("Không tìm thấy người dùng để cập nhật!");
-      error.statusCode = 404;
-      throw error;
+    if (rows && rows.length > 0) {
+      avatar = rows[0].avatar;
+    }
+
+    await db.execute(`
+      UPDATE 
+        \`user\`
+      SET
+        \`avatar\` = ${body.avatar == null ? null : `'${body.avatar}'`},
+        \`name\` = '${body.name}',
+        \`gender\` = ${body.gender == null ? null : `'${body.gender}'`},
+        \`birth_day\` = ${
+          body.birth_day == null ? null : `'${body.birth_day}'`
+        },
+        \`phone\` = '${body.phone}',
+        \`email\` = ${body.email == null ? null : `'${body.email}'`},
+        \`province\` = ${body.province == null ? null : `'${body.province}'`},
+        \`district\` = ${body.district == null ? null : `'${body.district}'`},
+        \`address\` = ${body.address == null ? null : `'${body.address}'`}
+      WHERE 
+        \`uuid\` = '${uuid}'
+    `);
+
+    if (avatar != null && avatar !== body.avatar) {
+      deleteFile(avatar);
     }
 
     return {
       code: 200,
-      message: "Cập nhật thông tin người dùng thành công!",
+      message: "Cập nhật thông tin thành công!",
     };
   } catch (error) {
-    console.error("Lỗi khi cập nhật thông tin người dùng:", error);
-    const err = new Error(
-      error.message || "Lỗi máy chủ, vui lòng thử lại sau!"
-    );
-    err.statusCode = error.statusCode || 500;
-    throw err;
+    console.error("Lỗi updateProfile:", error);
+    throw error;
   }
 }
+
 module.exports = { getDetailInfo, updateInfo };
