@@ -20,17 +20,9 @@ async function register(body) {
   }
 
   await db.execute(
-    `INSERT INTO user (uuid, username, password, email, phone, name, gender, birth_day, otp, status) 
+    `INSERT INTO user (uuid, password, email, phone, name, gender, birth_day, otp, status) 
      VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, '123456', 0)`,
-    [
-      email, // username = email
-      password,
-      email,
-      phone,
-      name,
-      gender || null,
-      birth_day || null,
-    ]
+    [password, email, phone, name, gender || null, birth_day || null]
   );
 
   return {
@@ -81,7 +73,6 @@ async function login(userInput) {
         birth_day,
         phone,
         email,
-        username,
         avatar,
         province,
         district,
@@ -149,7 +140,6 @@ async function login(userInput) {
         birth_day: user.birth_day ?? null,
         phone: user.phone ?? null,
         email: user.email ?? null,
-        username: user.username ?? null,
         avatar: user.avatar ?? null,
         province: user.province ?? null,
         district: user.district ?? null,
