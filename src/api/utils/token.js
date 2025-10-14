@@ -8,7 +8,7 @@ function signAccessToken(accountId) {
     };
     const secret = process.env.SECRET_KEY_AT;
     const options = {
-      expiresIn: "30m",
+      expiresIn: "30d",
     };
     jwt.sign(payload, secret, options, async (err, token) => {
       if (err) {
