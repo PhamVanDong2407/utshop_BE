@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../controller/auth_controller");
 const { checkLogin } = require("../../middleware/check_login");
+const { checkPermission } = require("../../middleware/check_permission");
 
 // API tạo tài khoản
 router.post("/register", async (req, res, next) => {
@@ -40,7 +41,7 @@ router.post("/refresh-token", async (req, res, next) => {
 });
 
 // API đổi mật khẩu
-router.put("/change-password", checkLogin, async (req, res, next) => {
+router.put("/change-password", checkLogin, checkPermission, async (req, res, next) => {
   try {
     res.json(await controller.changePassword(req.payload.id, req.body));
   } catch (error) {

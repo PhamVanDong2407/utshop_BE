@@ -1,7 +1,6 @@
 const { writeFileSync } = require("fs"); // Ghi lỗi vào file log.txt
 const express = require("express");
 const cors = require("cors"); // Thêm middleware CORS để cho phép truy cập từ các nguồn khác nhau (trong trường hợp frontend và backend không cùng nguồn)
-const { checkLogin } = require("./api/middleware/check_login"); // Middleware kiểm tra đăng nhập
 require("dotenv").config(); // Load biến môi trường từ file .env
 
 // Setup server
