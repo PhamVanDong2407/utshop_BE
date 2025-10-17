@@ -1,70 +1,173 @@
 // api/v1/controller/Admin/product_admin_controller.js
 const db = require("../../../utils/database");
+const offsetUtils = require("../../../utils/offset");
+
 
 async function list({ page = 1, limit = 10, keyword = "", state = 1 }) {
   try {
-    const query = `
+    const offset = offsetUtils.getOffset(page, limit);
+
+    const result = await db.queryMultiple([
+      `
       SELECT
-        p.uuid,
-        p.name,
-        p.description,
-        p.price AS default_price,
-        p.is_popular,
-        p.stock AS total_stock,
-        p.created_at,
-        pi.url AS main_image_url,
-        (
-          SELECT JSON_ARRAYAGG(
-            JSON_OBJECT(
-              'variant_uuid', pv.uuid,
-              'size', CASE pv.size WHEN 0 THEN 'M' WHEN 1 THEN 'L' WHEN 2 THEN 'XL' ELSE NULL END,
-              'gender', CASE pv.gender WHEN 0 THEN 'Nam' WHEN 1 THEN 'Nữ' ELSE NULL END,
-              'color', CASE pv.color WHEN 0 THEN 'Trắng' WHEN 1 THEN 'Đỏ' WHEN 2 THEN 'Đen' ELSE NULL END,
-              'stock', pv.stock,
-              'price', pv.price
-            )
-          )
-          FROM product_variants pv
-          WHERE pv.product_uuid = p.uuid
-        ) AS variants
+        \`uuid\`,
+        \`category_id\`,
+        \`name\`,
+        \`description\`,
+        \`price\`,
+        \`stock\`,
+        \`is_favourite\`,
+        \`is_popular\`
       FROM
-        products p
-      LEFT JOIN 
-        product_images pi ON p.uuid = pi.product_uuid AND pi.is_main = 1
-      GROUP BY
-        p.uuid
+        \`products\`
+      WHERE 
+        \`name\` LIKE '%${keyword}%' OR \`description\` LIKE '%${keyword}%'
       ORDER BY
-        p.created_at DESC;
-    `;
+        \`created_at\` DESC
+      LIMIT ${offset}, ${limit}
+      `,
+      ` 
+      SELECT count(*) AS total FROM \`products\`
+      WHERE \`name\` LIKE '%${keyword}%' 
+      `,
+    ]);
 
-    const products = await db.execute(query);
-
-    products.forEach((product) => {
-      if (product.variants) {
-        product.variants = JSON.parse(product.variants);
-      } else {
-        product.variants = [];
-      }
-    });
+    const totalCount = result[1][0].total;
+    const data =
+      result[0] == null
+        ? []
+        : result[0].map((item) => {
+            return {
+              uuid: item.uuid,
+              category_id: item.category_id,
+              name: item.name,
+              description: item.description,
+              price: item.price,
+              stock: item.stock,
+              is_favourite: item.is_favourite,
+              is_popular: item.is_popular,
+            };
+          });
 
     return {
       code: 200,
-      message: "Lấy danh sách sản phẩm thành công!",
-      data: products,
+      data: data,
+        pagination: {
+        totalPage: Math.ceil(totalCount / limit),
+        totalCount,
+      },
     };
   } catch (error) {
-    console.error("Error in getAllProductsAdmin:", error);
     throw error;
   }
 }
 
-async function detail(id) {}
+async function detail(id) {
+  try {
+    const [result] = await db.execute(
+      `SELECT * FROM
+        \`products\`
+      WHERE
+        \`uuid\` = ?`,
+      [id]
+    );
+    return {
+      code: 200,
+      data: result,
+    };
+  } catch (error) {
+    throw error;
+  }
+}
 
-async function create(body) {}
+async function create(body) {
+  try {
+    db.execute(
+      `INSERT INTO \`products\`(
+        \`uuid\`,
+        \`category_id\`,
+        \`name\`,
+        \`description\`,
+        \`price\`,
+        \`stock\`,
+        \`is_favourite\`,
+        \`is_popular\`
+      )
+      VALUES(
+        uuid(),
+        ?, ?, ?, ?, ?, ?, ?
+      )`,
+      [
+        body.category_id,
+        body.name,
+        body.description,
+        body.price,
+        body.stock,
+        body.is_favourite,
+        body.is_popular,
+      ]
+    );
 
-async function update(id, body) {}
+    return {
+      code: 200,
+      message: "Đã thêm sản phẩm thành công!",
+    };
+  } catch (error) {
+    throw error;
+  }
+}
 
-async function remove(id) {}
+async function update(id, body) {
+  try {
+    db.execute(
+      `UPDATE \`products\`
+      SET
+        \`category_id\` = ?,
+        \`name\` = ?,
+        \`description\` = ?,
+        \`price\` = ?,
+        \`stock\` = ?,
+        \`is_favourite\` = ?,
+        \`is_popular\` = ?
+      WHERE
+        \`uuid\` = ?`,
+      [
+        body.category_id,
+        body.name,
+        body.description,
+        body.price,
+        body.stock,
+        body.is_favourite,
+        body.is_popular,
+        id,
+      ]
+    );
+
+    return {
+      code: 200,
+      message: "Đã cập nhật sản phẩm thành công!",
+    };
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function remove(id) {
+  try {
+    db.execute(
+      `DELETE FROM \`products\`
+      WHERE \`uuid\` = ?`,
+      [id]
+    );
+
+    return {
+      code: 200,
+      message: "Đã xóa sản phẩm thành công!",
+    };
+  } catch (error) {
+    throw error;
+  }
+}
 
 module.exports = {
   list,
