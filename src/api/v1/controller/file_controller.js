@@ -34,6 +34,28 @@ async function uploadFile(imageFile) {
   };
 }
 
+async function uploadMultipleFile(imageFiles) {
+    const uploadedImages = []
+
+    for(const file of imageFiles) {
+        const extension = path.extname(file.originalname)
+        const oldPath = file.path
+        const newPath = path.join(__dirname, '../../../resources/', file.filename + extension)
+
+        await fs.promises.rename(oldPath, newPath)
+
+        const imageUrl = "resources/" + file.filename + extension
+        uploadedImages.push(imageUrl);
+    }
+
+    return {
+        code: 200,
+        message: "Upload successful",
+        files: uploadedImages
+    }
+}
+
+
 async function deleteFile(nameFile) {
   const filePath = path.join(__dirname, "../../../" + nameFile);
 
@@ -47,4 +69,4 @@ async function deleteFile(nameFile) {
   };
 }
 
-module.exports = { uploadFile, deleteFile };
+module.exports = { uploadFile, deleteFile, uploadMultipleFile };
