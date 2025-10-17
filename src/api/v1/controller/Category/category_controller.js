@@ -15,14 +15,14 @@ async function list({ page = 1, limit = 10, keyword = "", state = 1 }) {
       FROM
         \`categories\`
       WHERE
-        \`name\` LIKE '%${keyword}%'
+        \`name\` LIKE '%${keyword}%' OR \`description\` LIKE '%${keyword}%'
       ORDER BY
         \`created_at\` DESC
       LIMIT ${offset}, ${limit}
       `,
       `
       SELECT count(*) AS total FROM \`categories\`
-      WHERE \`name\` LIKE '%${keyword}%'
+      WHERE \`name\` LIKE '%${keyword}%' 
       `,
     ]);
 
