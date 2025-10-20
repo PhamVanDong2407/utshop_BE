@@ -5,84 +5,77 @@ const controller = require("../../controller/Product/product_controller");
 const { checkLogin } = require("../../../middleware/check_login");
 // const { checkPermission } = require("../../../middleware/check_permission");
 
+const upload = multer({ dest: "src/resources" });
+
 // API lấy danh sách sản phẩm
-router.get(
-  "/",
-  checkLogin,
-//   checkPermission,
-  async (req, res, next) => {
-    try {
-      const result = await controller.list({
-        page: req.query.page,
-        limit: req.query.limit,
-        keyword: req.query.keyword,
-        state : req.query.state,
-      });
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
+router.get("/", checkLogin, async (req, res, next) => {
+  try {
+    const result = await controller.list({
+      page: req.query.page,
+      limit: req.query.limit,
+      keyword: req.query.keyword,
+      state: req.query.state,
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
   }
-);
+});
 
-// chi tiet san pham
-router.get(
-  "/:id",
-  checkLogin,
-//   checkPermission,
-  async (req, res, next) => {
-    try {
-      const result = await controller.detail(req.params.id);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
+// API lấy chi tiết sản phẩm
+router.get("/:id", checkLogin, async (req, res, next) => {
+  try {
+    const result = await controller.detail(req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
   }
-);
+});
 
-// them san pham
+// API tạo sản phẩm
 router.post(
   "/",
   checkLogin,
-//   checkPermission,
+  upload.array("images", 10),
   async (req, res, next) => {
     try {
-      const result = await controller.create(req.body);
+      const result = await controller.create(req.body, req.files);
       res.json(result);
     } catch (error) {
+      console.error("Error in POST /product:", error);
       next(error);
     }
   }
 );
 
-// sua san pham
+// API cập nhật sản phẩm
 router.put(
   "/:id",
   checkLogin,
-//   checkPermission,
+  upload.array("images", 10),
   async (req, res, next) => {
     try {
-      const result = await controller.update(req.params.id, req.body);
+      const result = await controller.update(
+        req.params.id,
+        req.body,
+        req.files
+      );
       res.json(result);
     } catch (error) {
+      console.error("Error in PUT /product/:id:", error);
       next(error);
     }
   }
 );
 
-// xoa san pham
-router.delete(
-  "/:id",
-  checkLogin,
-//   checkPermission,
-  async (req, res, next) => {
-    try {
-      const result = await controller.remove(req.params.id);
-      res.json(result);
-    } catch (error) {
-      next(error);
-    }
+// API xóa sản phẩm
+router.delete("/:id", checkLogin, async (req, res, next) => {
+  try {
+    const result = await controller.remove(req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 module.exports = router;
