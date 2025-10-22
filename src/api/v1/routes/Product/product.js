@@ -33,20 +33,14 @@ router.get("/:id", checkLogin, async (req, res, next) => {
 });
 
 // API tạo sản phẩm
-router.post(
-  "/",
-  checkLogin,
-  upload.array("images", 10),
-  async (req, res, next) => {
-    try {
-      const result = await controller.create(req.body, req.files);
-      res.json(result);
-    } catch (error) {
-      console.error("Error in POST /product:", error);
-      next(error);
-    }
+router.post("/", checkLogin, async (req, res) => {
+  try {
+    const result = await controller.create(req.body);
+    res.status(result.code || 200).json(result);
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 // API cập nhật sản phẩm
 router.put(

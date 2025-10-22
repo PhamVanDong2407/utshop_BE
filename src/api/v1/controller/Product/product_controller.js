@@ -3,14 +3,14 @@ const offsetUtils = require("../../../utils/offset");
 const { uploadMultipleFile } = require("../file_controller");
 const { v4: uuidv4 } = require("uuid");
 
-// ==================== LẤY DANH SÁCH SẢN PHẨM ====================
+// ==================== LẤY DANH SÁCH SẢN PHẨM Admin =======================
 async function list({ page = 1, limit = 10, keyword = "" }) {
   try {
     const offset = offsetUtils.getOffset(page, limit);
 
-    const [products] = await db.execute(
+    const result = await db.queryMultiple([
       `
-      SELECT 
+      SELECT
         p.uuid,
         p.name,
         p.price,
@@ -21,39 +21,42 @@ async function list({ page = 1, limit = 10, keyword = "" }) {
           LIMIT 1
         ) AS main_image
       FROM products p
-      WHERE p.name LIKE ? OR p.description LIKE ?
+      WHERE p.name LIKE '%${keyword}%' OR p.description LIKE '%${keyword}%'
       ORDER BY p.created_at DESC
-      LIMIT ?, ?
-    `,
-      [`%${keyword}%`, `%${keyword}%`, offset, limit]
-    );
-
-    const [countRows] = await db.execute(
+      LIMIT ${offset}, ${limit}
+      `,
       `
-      SELECT COUNT(*) AS total
-      FROM products
-      WHERE name LIKE ? OR description LIKE ?
-    `,
-      [`%${keyword}%`, `%${keyword}%`]
-    );
+      SELECT COUNT(*) AS total 
+      FROM products 
+      WHERE name LIKE '%${keyword}%' OR description LIKE '%${keyword}%'
+      `,
+    ]);
 
-    const totalCount = countRows[0]?.total || 0;
+    const products = Array.isArray(result[0]) ? result[0] : [];
+    const totalCount = result[1]?.[0]?.total || 0;
+
+    const data = products.map((item) => ({
+      uuid: item.uuid,
+      name: item.name,
+      price: item.price,
+      main_image: item.main_image || null,
+    }));
 
     return {
       code: 200,
-      data: products,
+      data,
       pagination: {
         totalPage: Math.ceil(totalCount / limit),
         totalCount,
       },
     };
   } catch (error) {
-    console.error(error);
+    console.error("❌ Error in product list:", error);
     throw error;
   }
 }
 
-// ==================== CHI TIẾT SẢN PHẨM ====================
+// ==================== CHI TIẾT SẢN PHẨM Admin ====================
 async function detail(id) {
   try {
     let productRowsRaw = await db.execute(
@@ -131,54 +134,70 @@ async function detail(id) {
   }
 }
 
-// ==================== THÊM SẢN PHẨM ====================
-async function create(body, files) {
+// ==================== TẠO SẢN PHẨM Admin ====================
+async function create(body) {
   try {
     const category_uuid = (body.category_uuid || "").trim();
     const name = (body.name || "").trim();
-    const price = parseFloat(body.price);
+    const price = parseFloat(body.price) || 0;
     const description = body.description || "";
     const is_popular = parseInt(body.is_popular || 0);
-    const variants = JSON.parse(body.variants || "[]");
 
-    const uploadResult = await uploadMultipleFile(files);
-    const uploadedImages = uploadResult.files || [];
+    let images = [];
+    let variants = [];
+
+    if (typeof body.images === "string") {
+      try {
+        images = JSON.parse(body.images);
+      } catch {
+        images = [];
+      }
+    } else if (Array.isArray(body.images)) {
+      images = body.images;
+    }
+
+    if (typeof body.variants === "string") {
+      try {
+        variants = JSON.parse(body.variants);
+      } catch {
+        variants = [];
+      }
+    } else if (Array.isArray(body.variants)) {
+      variants = body.variants;
+    }
 
     const product_uuid = uuidv4();
 
     await db.execute(
-      `
-      INSERT INTO products (uuid, category_uuid, name, description, price, is_popular)
-      VALUES (?, ?, ?, ?, ?, ?)
-      `,
+      `INSERT INTO products (uuid, category_uuid, name, description, price, is_popular)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       [product_uuid, category_uuid, name, description, price, is_popular]
     );
 
-    for (const url of uploadedImages) {
+    for (const [i, img] of images.entries()) {
+      const url = img.url || "";
+      if (!url) continue;
+
       await db.execute(
-        `
-        INSERT INTO product_images (uuid, product_uuid, url, is_main)
-        VALUES (?, ?, ?, ?)
-        `,
-        [uuidv4(), product_uuid, url, 0]
+        `INSERT INTO product_images (uuid, product_uuid, url, is_main)
+         VALUES (?, ?, ?, ?)`,
+        [uuidv4(), product_uuid, url, i === 0 ? 1 : 0]
       );
     }
 
     for (const v of variants) {
       await db.execute(
-        `
-        INSERT INTO product_variants (uuid, product_uuid, size, gender, color, type, stock, price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+        `INSERT INTO product_variants (uuid, product_uuid, size, gender, color, type, stock, price)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           uuidv4(),
           product_uuid,
-          v.size,
-          v.gender,
-          v.color,
-          v.type,
-          v.stock,
-          v.price,
+          v.size || 0,
+          v.gender || 0,
+          v.color || 0,
+          v.type || 0,
+          v.stock || 0,
+          parseFloat(v.price || 0),
         ]
       );
     }
@@ -186,14 +205,18 @@ async function create(body, files) {
     return {
       code: 201,
       message: "Tạo sản phẩm thành công!",
+      data: { product_uuid },
     };
   } catch (error) {
     console.error("❌ Error in create product:", error);
-    throw error;
+    return {
+      code: 500,
+      message: `Lỗi khi tạo sản phẩm: ${error.message}`,
+    };
   }
 }
 
-// ==================== CẬP NHẬT SẢN PHẨM ====================
+// ==================== CẬP NHẬT SẢN PHẨM Admin ====================
 async function update(id, body, files = []) {
   try {
     const category_uuid = (body.category_uuid || "").trim();
@@ -260,7 +283,7 @@ async function update(id, body, files = []) {
   }
 }
 
-// ==================== XÓA SẢN PHẨM ====================
+// ==================== XÓA SẢN PHẨM Admin ====================
 async function remove(id) {
   try {
     await db.execute(`DELETE FROM products WHERE uuid = ?`, [id]);
