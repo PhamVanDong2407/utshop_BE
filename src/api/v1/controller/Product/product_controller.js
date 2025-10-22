@@ -221,67 +221,105 @@ async function update(id, body, files = []) {
   try {
     const category_uuid = (body.category_uuid || "").trim();
     const name = (body.name || "").trim();
-    const price = parseFloat(body.price);
+    const price = parseFloat(body.price) || 0;
     const description = body.description || "";
     const is_popular = parseInt(body.is_popular || 0);
-    const variants = JSON.parse(body.variants || "[]");
 
-    // Cập nhật thông tin sản phẩm
+    let images = [];
+    let variants = [];
+
+    // ✅ Parse images (từ JSON hoặc mảng)
+    if (typeof body.images === "string") {
+      try {
+        images = JSON.parse(body.images);
+      } catch {
+        images = [];
+      }
+    } else if (Array.isArray(body.images)) {
+      images = body.images;
+    }
+
+    // ✅ Parse variants (từ JSON hoặc mảng)
+    if (typeof body.variants === "string") {
+      try {
+        variants = JSON.parse(body.variants);
+      } catch {
+        variants = [];
+      }
+    } else if (Array.isArray(body.variants)) {
+      variants = body.variants;
+    }
+
+    // ✅ Cập nhật sản phẩm chính
     await db.execute(
-      `
-      UPDATE products
-      SET category_uuid = ?, name = ?, description = ?, price = ?, is_popular = ?
-      WHERE uuid = ?
-      `,
+      `UPDATE products
+       SET category_uuid = ?, name = ?, description = ?, price = ?, is_popular = ?
+       WHERE uuid = ?`,
       [category_uuid, name, description, price, is_popular, id]
     );
 
-    // Nếu có file upload mới thì xử lý lại ảnh
+    // ===================== ẢNH =====================
+    let uploadedImages = [];
+
+    // Nếu có upload file mới thì upload và thay thế ảnh cũ
     if (files && files.length > 0) {
       const uploadResult = await uploadMultipleFile(files);
-      const uploadedImages = uploadResult.files || [];
-
-      // Xóa ảnh cũ
-      await db.execute(`DELETE FROM product_images WHERE product_uuid = ?`, [
-        id,
-      ]);
-
-      // Thêm ảnh mới
-      for (const url of uploadedImages) {
-        await db.execute(
-          `
-          INSERT INTO product_images (uuid, product_uuid, url, is_main)
-          VALUES (?, ?, ?, ?)
-          `,
-          [uuidv4(), id, url, 0]
-        );
-      }
+      uploadedImages = uploadResult.files || [];
+    } else {
+      // Nếu không upload file mới thì giữ nguyên ảnh từ body
+      uploadedImages = images.map((img) => img.url).filter(Boolean);
     }
 
-    // Xóa và thêm lại variants
+    // Xóa toàn bộ ảnh cũ
+    await db.execute(`DELETE FROM product_images WHERE product_uuid = ?`, [id]);
+
+    // Thêm lại ảnh mới
+    for (const [i, url] of uploadedImages.entries()) {
+      await db.execute(
+        `INSERT INTO product_images (uuid, product_uuid, url, is_main)
+         VALUES (?, ?, ?, ?)`,
+        [uuidv4(), id, url, i === 0 ? 1 : 0]
+      );
+    }
+
+    // ===================== VARIANTS =====================
+    // Xóa toàn bộ variants cũ
     await db.execute(`DELETE FROM product_variants WHERE product_uuid = ?`, [
       id,
     ]);
 
+    // Thêm lại variants mới
     for (const v of variants) {
       await db.execute(
-        `
-        INSERT INTO product_variants (uuid, product_uuid, size, gender, color, type, stock, price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        [uuidv4(), id, v.size, v.gender, v.color, v.type, v.stock, v.price]
+        `INSERT INTO product_variants (uuid, product_uuid, size, gender, color, type, stock, price)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          uuidv4(),
+          id,
+          v.size || 0,
+          v.gender || 0,
+          v.color || 0,
+          v.type || 0,
+          v.stock || 0,
+          parseFloat(v.price || 0),
+        ]
       );
     }
 
     return {
       code: 200,
       message: "Cập nhật sản phẩm thành công!",
+      data: { product_uuid: id },
     };
   } catch (error) {
     console.error("❌ Error in update product:", error);
-    throw error;
+    return {
+      code: 500,
+      message: `Lỗi khi cập nhật sản phẩm: ${error.message}`,
+    };
   }
 }
+
 
 // ==================== XÓA SẢN PHẨM Admin ====================
 async function remove(id) {
