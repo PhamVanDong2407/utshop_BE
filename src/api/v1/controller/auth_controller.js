@@ -20,8 +20,12 @@ async function register(body) {
   }
 
   await db.execute(
-    `INSERT INTO user (uuid, password, email, phone, name, gender, birth_day, otp, status) 
-     VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, '123456', 0)`,
+    `INSERT INTO user (
+    uuid, permission_id, password, email, phone, name, gender, birth_day, otp, status
+  )
+  VALUES (
+    UUID(), 1, ?, ?, ?, ?, ?, ?, '123456', 0
+  )`,
     [password, email, phone, name, gender || null, birth_day || null]
   );
 
