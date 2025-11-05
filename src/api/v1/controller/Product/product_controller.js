@@ -166,31 +166,46 @@ async function create(body) {
       variants = body.variants;
     }
 
-    const product_uuid = uuidv4();
+    const [catCheck] = await db.execute(
+      `SELECT 1 FROM categories WHERE uuid = ? LIMIT 1`,
+      [category_uuid]
+    );
+    if (!catCheck || catCheck.length === 0) {
+      return { code: 400, message: "Danh mục không tồn tại!" };
+    }
 
     await db.execute(
-      `INSERT INTO products (uuid, category_uuid, name, description, price, is_popular)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [product_uuid, category_uuid, name, description, price, is_popular]
+      `INSERT INTO products (category_uuid, name, description, price, is_popular)
+       VALUES (?, ?, ?, ?, ?)`,
+      [category_uuid, name, description, price, is_popular]
     );
+
+    const result = await db.execute(
+      `SELECT uuid FROM products ORDER BY created_at DESC LIMIT 1`
+    );
+
+    if (!result || result.length === 0) {
+      throw new Error(
+        "Không thể lấy UUID sản phẩm vừa tạo! Kết quả query rỗng."
+      );
+    }
+
+    const product_uuid = result[0].uuid;
 
     for (const [i, img] of images.entries()) {
       const url = img.url || "";
       if (!url) continue;
-
       await db.execute(
-        `INSERT INTO product_images (uuid, product_uuid, url, is_main)
-         VALUES (?, ?, ?, ?)`,
-        [uuidv4(), product_uuid, url, i === 0 ? 1 : 0]
+        `INSERT INTO product_images (product_uuid, url, is_main) VALUES (?, ?, ?)`,
+        [product_uuid, url, i === 0 ? 1 : 0]
       );
     }
 
     for (const v of variants) {
       await db.execute(
-        `INSERT INTO product_variants (uuid, product_uuid, size, gender, color, type, stock, price)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO product_variants (product_uuid, size, gender, color, type, stock, price)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
-          uuidv4(),
           product_uuid,
           v.size || 0,
           v.gender || 0,
@@ -208,11 +223,10 @@ async function create(body) {
       data: { product_uuid },
     };
   } catch (error) {
-    console.error("❌ Error in create product:", error);
-    return {
-      code: 500,
-      message: `Lỗi khi tạo sản phẩm: ${error.message}`,
-    };
+    if (error.code === "ER_NO_REFERENCED_ROW_2") {
+      return { code: 400, message: "Danh mục không tồn tại!" };
+    }
+    return { code: 500, message: `Lỗi: ${error.message}` };
   }
 }
 
@@ -319,7 +333,6 @@ async function update(id, body, files = []) {
     };
   }
 }
-
 
 // ==================== XÓA SẢN PHẨM Admin ====================
 async function remove(id) {
