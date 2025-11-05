@@ -70,34 +70,18 @@ async function create(req) {
 // ==================== XÓA BANNER (XÓA ẢNH LUÔN) ====================
 async function remove(uuid) {
   try {
-    // Lấy thông tin banner trước khi xóa
-    const [[banner]] = await db.execute(
-      `SELECT image_url FROM banners WHERE uuid = ?`,
-      [uuid]
-    );
+    const result = await db.execute(`DELETE FROM banners WHERE uuid = ?`, [
+      uuid,
+    ]);
 
-    if (!banner) {
+    if (result.affectedRows === 0) {
       return { code: 404, message: "Không tìm thấy banner để xóa." };
-    }
-
-    // Xóa trong DB
-    await db.execute(`DELETE FROM banners WHERE uuid = ?`, [uuid]);
-
-    // Xóa file ảnh nếu là file local
-    if (banner.image_url.startsWith("resources/")) {
-      const filePath = path.join(process.cwd(), "src", banner.image_url);
-      try {
-        await fs.unlink(filePath);
-        console.log("Đã xóa file:", filePath);
-      } catch (err) {
-        console.warn("Không thể xóa file (có thể đã mất):", filePath);
-      }
     }
 
     return { code: 200, message: "Xóa banner thành công!" };
   } catch (error) {
     console.error("Lỗi xóa banner:", error);
-    throw error;
+    return { code: 500, message: "Lỗi server" };
   }
 }
 
