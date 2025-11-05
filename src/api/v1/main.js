@@ -8,5 +8,6 @@ router.use("/file", require("./routes/file"));
 router.use("/category", require("./routes/Category/category"));
 router.use("/product", require("./routes/Product/product"));
 router.use("/voucher", require("./routes/Voucher/voucher"));
+router.use("/banner", require("./routes/Banner/banner"));
 
 module.exports = router;
