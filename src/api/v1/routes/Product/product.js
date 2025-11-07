@@ -7,6 +7,8 @@ const { checkLogin } = require("../../../middleware/check_login");
 
 const upload = multer({ dest: "src/resources" });
 
+// ADMIN
+
 // API lấy danh sách sản phẩm
 router.get("/", checkLogin, async (req, res, next) => {
   try {
@@ -68,6 +70,28 @@ router.delete("/:id", checkLogin, async (req, res, next) => {
     const result = await controller.remove(req.params.id);
     res.json(result);
   } catch (error) {
+    next(error);
+  }
+});
+
+// USER
+
+// ==================== LẤY DANH SÁCH SẢN PHẨM PHỔ BIẾN (USER) ====================
+router.get("/user/popular", checkLogin, async (req, res, next) => {
+  try {
+    const user_uuid = req.user.uuid;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const result = await controller.listForUser({
+      user_uuid,
+      page,
+      limit,
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("❌ Error in /user/list:", error);
     next(error);
   }
 });

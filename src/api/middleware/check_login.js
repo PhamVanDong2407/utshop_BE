@@ -17,6 +17,9 @@ const checkLogin = async (req, res, next) => {
     const payload = await verifyAccessToken(token);
     req.payload = payload;
 
+    // ✅ Gắn uuid vào req để các API khác sử dụng
+    req.user = { uuid: payload.id };
+
     // Query DB: lấy token lưu & trạng thái user
     const [token_res] = await db.execute(
       "SELECT access_token FROM token WHERE user_id = ? LIMIT 1",
