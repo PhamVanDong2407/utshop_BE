@@ -115,4 +115,25 @@ router.get("/user/list", checkLogin, async (req, res, next) => {
   }
 });
 
+// ==================== LẤY CHI TIẾT SẢN PHẨM (USER) ====================
+router.get("/user/detail/:id", checkLogin, async (req, res, next) => {
+  try {
+    const user_uuid = req.user.uuid;
+    const product_uuid = req.params.id;
+
+    if (!product_uuid) {
+      return res.json({ code: 400, message: "Thiếu ID sản phẩm." });
+    }
+
+    const result = await controller.detailProductUser({
+      product_uuid,
+      user_uuid,
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

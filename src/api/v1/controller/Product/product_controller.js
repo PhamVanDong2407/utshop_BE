@@ -506,8 +506,87 @@ async function listAllForUser({ user_uuid, page = 1, limit = 10 }) {
 }
 
 // ==================== CHI TIẾT SẢN PHẨM USER ====================
-async function detailProductUser(id) {
-  
+async function detailProductUser({ product_uuid, user_uuid }) {
+  try {
+    const productSql = `
+      SELECT
+        p.uuid,
+        p.name,
+        p.description,
+        p.price,
+        CASE
+          WHEN uf.user_uuid IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END AS is_favorite
+      FROM products p
+      LEFT JOIN user_favorites uf
+        ON uf.product_uuid = p.uuid AND uf.user_uuid = ?
+      WHERE p.uuid = ?
+    `;
+
+    const imagesSql = `
+      SELECT
+        pi.uuid,
+        pi.url,
+        pi.is_main
+      FROM product_images pi
+      WHERE pi.product_uuid = ?
+      ORDER BY pi.is_main DESC, pi.created_at ASC
+    `;
+
+    const variantsSql = `
+      SELECT
+        pv.uuid AS variant_uuid,
+        pv.size,
+        pv.color,
+        pv.stock
+      FROM product_variants pv
+      WHERE pv.product_uuid = ?
+    `;
+
+    const [productResult, imagesResult, variantsResult] = await Promise.all([
+      db.execute(productSql, [user_uuid, product_uuid]),
+      db.execute(imagesSql, [product_uuid]),
+      db.execute(variantsSql, [product_uuid]),
+    ]);
+
+    if (!productResult || productResult.length === 0) {
+      return { code: 404, message: "Không tìm thấy sản phẩm!" };
+    }
+
+    const product = productResult[0];
+
+    const total_stock = variantsResult.reduce((total, v) => total + v.stock, 0);
+
+    const data = {
+      uuid: product.uuid,
+      name: product.name,
+      description: product.description,
+      price: parseFloat(product.price),
+      is_favorite: Boolean(product.is_favorite),
+      total_stock: total_stock,
+      images: imagesResult.map((img) => ({
+        uuid: img.uuid,
+        url: img.url,
+        is_main: Boolean(img.is_main),
+      })),
+      variants: variantsResult.map((v) => ({
+        variant_uuid: v.variant_uuid,
+        size: v.size,
+        color: v.color,
+        stock: v.stock,
+      })),
+    };
+
+    return {
+      code: 200,
+      message: "Lấy chi tiết sản phẩm thành công!",
+      data: data,
+    };
+  } catch (error) {
+    console.error("❌ Error in detailProductUser:", error);
+    return { code: 500, message: error.message || "Lỗi máy chủ!" };
+  }
 }
 
 module.exports = {
@@ -518,4 +597,5 @@ module.exports = {
   remove,
   listForUser,
   listAllForUser,
+  detailProductUser,
 };
