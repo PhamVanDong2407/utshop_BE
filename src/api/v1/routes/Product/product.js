@@ -96,4 +96,23 @@ router.get("/user/popular", checkLogin, async (req, res, next) => {
   }
 });
 
+// ==================== LẤY DANH SÁCH TẤT CẢ SẢN PHẨM (USER) ====================
+router.get("/user/list", checkLogin, async (req, res, next) => {
+  try {
+    const user_uuid = req.user.uuid;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    const result = await controller.listAllForUser({
+      user_uuid,
+      page,
+      limit,
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

@@ -431,6 +431,85 @@ async function listForUser({ user_uuid, page = 1, limit = 10 }) {
   }
 }
 
+// ==================== LẤY TẤT CẢ SẢN PHẨM USER ====================
+async function listAllForUser({ user_uuid, page = 1, limit = 10 }) {
+  try {
+    const offset = offsetUtils.getOffset(page, limit);
+
+    const sqlList = `
+      SELECT
+        p.uuid,
+        p.name,
+        p.price,
+        (
+          SELECT pi.url
+          FROM product_images pi
+          WHERE pi.product_uuid = p.uuid AND pi.is_main = 1
+          LIMIT 1
+        ) AS main_image,
+        CASE
+          WHEN uf.user_uuid IS NOT NULL THEN TRUE
+          ELSE FALSE
+        END AS is_favorite
+      FROM products p
+      LEFT JOIN user_favorites uf
+        ON uf.product_uuid = p.uuid AND uf.user_uuid = ?
+      ORDER BY p.created_at DESC
+      LIMIT ?, ?
+    `;
+
+    const sqlCount = `
+      SELECT COUNT(*) AS total
+      FROM products p
+    `;
+
+    const rows = await db.execute(sqlList, [user_uuid, offset, limit]);
+    const countResult = await db.execute(sqlCount);
+
+    if (!rows || rows.length === 0) {
+      return {
+        code: 404,
+        message: "Không tìm thấy sản phẩm!",
+        data: [],
+        pagination: {
+          totalPage: 0,
+          totalCount: 0,
+          currentPage: page,
+        },
+      };
+    }
+
+    const data = rows.map((p) => ({
+      uuid: p.uuid,
+      name: p.name,
+      price: parseFloat(p.price),
+      image: p.main_image || null,
+      is_favorite: Boolean(p.is_favorite),
+    }));
+
+    const total = countResult[0]?.total || 0;
+
+    return {
+      code: 200,
+      message: "Lấy danh sách tất cả sản phẩm thành công!",
+      data,
+      pagination: {
+        totalPage: Math.ceil(total / limit),
+        totalCount: total,
+        currentPage: page,
+        limit,
+      },
+    };
+  } catch (error) {
+    return { code: 500, message: error.message || "Lỗi máy chủ!" };
+  }
+}
+
+// ==================== CHI TIẾT SẢN PHẨM USER ====================
+async function detailProductUser(id) {
+  
+}
+
 module.exports = {
   list,
   detail,
@@ -438,4 +517,5 @@ module.exports = {
   update,
   remove,
   listForUser,
+  listAllForUser,
 };
