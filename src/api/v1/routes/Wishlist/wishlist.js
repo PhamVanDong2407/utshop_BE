@@ -4,15 +4,22 @@ const router = express.Router();
 const controller = require("../../controller/Wishlist/wishlist_controller");
 const { checkLogin } = require("../../../middleware/check_login");
 
-router.get("/", checkLogin, async (req, res, next) => {
-  try {
-    const userId = req.user.uuid;
-    const result = await controller.list(userId);
-    res.json(result);
-  } catch (error) {
-    next(error);
+router.get(
+  "/",
+  checkLogin,
+  async (req, res, next) => {
+    try {
+      const result = await controller.list({
+        userId: req.user.uuid, 
+        page: req.query.page,
+        limit: req.query.limit,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 router.post("/", checkLogin, async (req, res, next) => {
   try {

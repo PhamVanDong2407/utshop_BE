@@ -1,8 +1,13 @@
 const db = require("../../../utils/database");
+const offsetUtils = require("../../../utils/offset");
 
-async function list(userId) {
+async function list({ userId, page = 1, limit = 10 }) {
   try {
-    const [result] = await db.execute(
+    const offset = offsetUtils.getOffset(page, limit);
+    const safeOffset = parseInt(offset) || 0;
+    const safeLimit = parseInt(limit) || 10;
+
+    const result = await db.queryMultiple([
       `
       SELECT
         p.uuid,
@@ -16,22 +21,37 @@ async function list(userId) {
       LEFT JOIN
         product_images AS pi ON p.uuid = pi.product_uuid AND pi.is_main = 1
       WHERE
-        uf.user_uuid = ?
+        uf.user_uuid = '${userId}'  /* <-- SỬA LỖI Ở ĐÂY */
       ORDER BY
         uf.created_at DESC
-    `,
-      [userId]
-    );
+      LIMIT ${safeOffset}, ${safeLimit}
+      `,
+
+      `
+      SELECT
+        count(*) AS total
+      FROM
+        user_favorites
+      WHERE
+        user_uuid = '${userId}' /* <-- SỬA LỖI Ở ĐÂY */
+      `,
+    ]);
+
+    const totalCount = result[1][0].total;
+    const data = result[0] == null ? [] : result[0];
 
     return {
       code: 200,
-      data: result || [],
+      data: data,
+      pagination: {
+        totalPage: Math.ceil(totalCount / safeLimit),
+        totalCount,
+      },
     };
   } catch (error) {
     throw error;
   }
 }
-
 async function add(userId, productId) {
   try {
     await db.execute(
