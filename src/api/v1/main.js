@@ -9,5 +9,7 @@ router.use("/category", require("./routes/Category/category"));
 router.use("/product", require("./routes/Product/product"));
 router.use("/voucher", require("./routes/Voucher/voucher"));
 router.use("/banner", require("./routes/Banner/banner"));
+router.use("/wishlist", require("./routes/Wishlist/wishlist"));
+
 
 module.exports = router;
