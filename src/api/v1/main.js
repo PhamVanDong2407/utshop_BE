@@ -10,6 +10,7 @@ router.use("/product", require("./routes/Product/product"));
 router.use("/voucher", require("./routes/Voucher/voucher"));
 router.use("/banner", require("./routes/Banner/banner"));
 router.use("/wishlist", require("./routes/Wishlist/wishlist"));
+router.use("/delivery_address", require("./routes/DeliveryAddress/delivery_address"));
 
 
 module.exports = router;

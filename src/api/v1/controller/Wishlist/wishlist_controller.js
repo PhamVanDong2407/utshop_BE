@@ -21,7 +21,7 @@ async function list({ userId, page = 1, limit = 10 }) {
       LEFT JOIN
         product_images AS pi ON p.uuid = pi.product_uuid AND pi.is_main = 1
       WHERE
-        uf.user_uuid = '${userId}'  /* <-- SỬA LỖI Ở ĐÂY */
+        uf.user_uuid = '${userId}'  
       ORDER BY
         uf.created_at DESC
       LIMIT ${safeOffset}, ${safeLimit}
@@ -33,7 +33,7 @@ async function list({ userId, page = 1, limit = 10 }) {
       FROM
         user_favorites
       WHERE
-        user_uuid = '${userId}' /* <-- SỬA LỖI Ở ĐÂY */
+        user_uuid = '${userId}'
       `,
     ]);
 
