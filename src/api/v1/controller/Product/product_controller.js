@@ -432,15 +432,43 @@ async function listForUser({ user_uuid, page = 1, limit = 10 }) {
 }
 
 // ==================== LẤY TẤT CẢ SẢN PHẨM USER ====================
-async function listAllForUser({ user_uuid, page = 1, limit = 10 }) {
+async function listAllForUser({
+  user_uuid,
+  page = 1,
+  limit = 10,
+  keyword = "",
+  category = "",
+}) {
   try {
     const offset = offsetUtils.getOffset(page, limit);
+
+    const paramsList = [user_uuid];
+    const paramsCount = [];
+
+    // Xây dựng mệnh đề WHERE động
+    let whereClause = " WHERE 1=1 ";
+    if (keyword) {
+      whereClause += " AND (p.name LIKE ? OR p.description LIKE ?) ";
+      const keywordLike = `%${keyword}%`;
+      paramsList.push(keywordLike, keywordLike);
+      paramsCount.push(keywordLike, keywordLike);
+    }
+    if (category && category !== "Tất cả") {
+      // Sẽ lọc các danh mục có chứa chữ "Nam", "Nữ", "Quần", "Áo"
+      whereClause += " AND c.name LIKE ? ";
+      const categoryLike = `%${category}%`;
+      paramsList.push(categoryLike);
+      paramsCount.push(categoryLike);
+    }
+
+    paramsList.push(offset, limit);
 
     const sqlList = `
       SELECT
         p.uuid,
         p.name,
         p.price,
+        c.name AS categoryName, -- Thêm để Flutter lọc
         (
           SELECT pi.url
           FROM product_images pi
@@ -454,6 +482,8 @@ async function listAllForUser({ user_uuid, page = 1, limit = 10 }) {
       FROM products p
       LEFT JOIN user_favorites uf
         ON uf.product_uuid = p.uuid AND uf.user_uuid = ?
+      JOIN categories c ON p.category_uuid = c.uuid -- Thêm JOIN categories
+      ${whereClause} -- Thêm WHERE động
       ORDER BY p.created_at DESC
       LIMIT ?, ?
     `;
@@ -461,21 +491,22 @@ async function listAllForUser({ user_uuid, page = 1, limit = 10 }) {
     const sqlCount = `
       SELECT COUNT(*) AS total
       FROM products p
+      JOIN categories c ON p.category_uuid = c.uuid -- Thêm JOIN categories
+      ${whereClause} -- Thêm WHERE động
     `;
 
-    const rows = await db.execute(sqlList, [user_uuid, offset, limit]);
-    const countResult = await db.execute(sqlCount);
+    // Thực thi 2 câu lệnh song song
+    const [rows, countResult] = await Promise.all([
+      db.execute(sqlList, paramsList),
+      db.execute(sqlCount, paramsCount),
+    ]);
 
     if (!rows || rows.length === 0) {
       return {
-        code: 404,
+        code: 200,
         message: "Không tìm thấy sản phẩm!",
         data: [],
-        pagination: {
-          totalPage: 0,
-          totalCount: 0,
-          currentPage: page,
-        },
+        pagination: { totalPage: 0, totalCount: 0, currentPage: page },
       };
     }
 
@@ -485,6 +516,7 @@ async function listAllForUser({ user_uuid, page = 1, limit = 10 }) {
       price: parseFloat(p.price),
       image: p.main_image || null,
       is_favorite: Boolean(p.is_favorite),
+      categoryName: p.categoryName,
     }));
 
     const total = countResult[0]?.total || 0;
@@ -501,6 +533,7 @@ async function listAllForUser({ user_uuid, page = 1, limit = 10 }) {
       },
     };
   } catch (error) {
+    console.error("❌ Error in listAllForUser:", error);
     return { code: 500, message: error.message || "Lỗi máy chủ!" };
   }
 }
