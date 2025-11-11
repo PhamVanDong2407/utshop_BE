@@ -4,7 +4,9 @@ const controller = require("../../controller/Voucher/voucher_controller");
 const { checkLogin } = require("../../../middleware/check_login");
 // const { checkPermission } = require("../../../middleware/check_permission");
 
-//  lấy danh sách 
+// ADMIN
+
+//  lấy danh sách
 router.get(
   "/",
   checkLogin,
@@ -39,7 +41,20 @@ router.get(
   }
 );
 
-// chi tiet 
+// USER - Lấy danh sách voucher dành cho user
+router.get("/user-list", checkLogin, async (req, res, next) => {
+  try {
+    const result = await controller.getListForUser(req.user, {
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// chi tiet
 router.get(
   "/:id",
   checkLogin,
@@ -54,7 +69,7 @@ router.get(
   }
 );
 
-// them 
+// them
 router.post(
   "/",
   checkLogin,
@@ -69,7 +84,7 @@ router.post(
   }
 );
 
-// sua 
+// sua
 router.put(
   "/:id",
   checkLogin,

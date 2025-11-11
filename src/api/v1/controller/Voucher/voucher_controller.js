@@ -2,6 +2,7 @@
 const db = require("../../../utils/database");
 const offsetUtils = require("../../../utils/offset");
 
+// ADMIN
 async function list({ page = 1, limit = 10, keyword = "", state = 1 }) {
   try {
     const offset = offsetUtils.getOffset(page, limit);
@@ -270,6 +271,113 @@ async function remove(id) {
   }
 }
 
+// USER
+
+async function getListForUser(user, { page = 1, limit = 10 }) {
+  try {
+    if (!user || !user.uuid) {
+      return { code: 401, message: "Không tìm thấy thông tin người dùng." };
+    }
+
+    const user_uuid = user.uuid;
+    const offset = offsetUtils.getOffset(page, limit);
+
+    const result = await db.queryMultiple([
+      `
+      SELECT
+        \`uuid\`,
+        \`code\`,
+        \`description\`,
+        \`discount_type\`,
+        \`discount_value\`,
+        \`min_order_value\`,
+        \`max_discount_amount\`,
+        \`start_date\`,
+        \`end_date\`,
+        \`usage_limit_per_voucher\`,
+        \`usage_limit_per_user\`,
+        \`current_usage_count\`,
+        (
+          SELECT COUNT(*)
+          FROM \`orders\` \`o\`
+          WHERE \`o\`.\`user_uuid\` = '${user_uuid}'
+            AND \`o\`.\`voucher_uuid\` = \`vouchers\`.\`uuid\`
+        ) AS \`user_usage_count\`
+      FROM
+        \`vouchers\`
+      WHERE
+        \`is_active\` = 1
+      ORDER BY
+        \`end_date\` DESC,
+        \`created_at\` DESC
+      LIMIT ${offset}, ${limit}
+      `,
+      `
+      SELECT count(*) AS total FROM \`vouchers\`
+      WHERE \`is_active\` = 1
+      `,
+    ]);
+
+    const totalCount = result[1][0].total;
+    const now = new Date();
+
+    const data =
+      result[0] == null
+        ? []
+        : result[0].map((item) => {
+            const startDate = new Date(item.start_date);
+            const endDate = new Date(item.end_date);
+            endDate.setHours(23, 59, 59, 999);
+
+            let status = "valid";
+            if (endDate < now) {
+              status = "expired"; // Hết hạn
+            } else if (startDate > now) {
+              status = "upcoming"; // Sắp diễn ra
+            } else if (
+              item.current_usage_count >= item.usage_limit_per_voucher
+            ) {
+              status = "depleted"; // Hết lượt toàn hệ thống
+            } else if (item.user_usage_count >= item.usage_limit_per_user) {
+              status = "used"; // Người dùng đã dùng hết lượt
+            }
+
+            return {
+              uuid: item.uuid,
+              code: item.code,
+              description: item.description,
+              discount_type: item.discount_type,
+              discount_value: item.discount_value,
+              min_order_value: item.min_order_value,
+              max_discount_amount: item.max_discount_amount,
+              start_date: item.start_date,
+              end_date: item.end_date,
+              usage_limit_per_voucher: item.usage_limit_per_voucher,
+              usage_limit_per_user: item.usage_limit_per_user,
+              current_usage_count: item.current_usage_count,
+              user_usage_count: item.user_usage_count,
+              status: status,
+            };
+          });
+
+    return {
+      code: 200,
+      data: data,
+      pagination: {
+        totalPage: Math.ceil(totalCount / limit),
+        totalCount,
+      },
+    };
+  } catch (error) {
+    console.error("❌ Lỗi khi lấy voucher cho user:", error);
+    return {
+      code: 500,
+      message: "Lỗi server khi lấy danh sách voucher!",
+      error: error.message,
+    };
+  }
+}
+
 module.exports = {
   list,
   dropdown,
@@ -277,4 +385,5 @@ module.exports = {
   create,
   update,
   remove,
+  getListForUser,
 };
