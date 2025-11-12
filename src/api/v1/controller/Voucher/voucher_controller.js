@@ -1,4 +1,3 @@
-// api/v1/controller/Admin/product_admin_controller.js
 const db = require("../../../utils/database");
 const offsetUtils = require("../../../utils/offset");
 
