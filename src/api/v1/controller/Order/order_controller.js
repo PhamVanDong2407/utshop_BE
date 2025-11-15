@@ -135,6 +135,199 @@ async function createOrder(user, payload) {
   }
 }
 
+async function getOrderHistory(user) {
+  try {
+    if (!user || !user.uuid) {
+      return { code: 401, message: "Không tìm thấy thông tin người dùng." };
+    }
+    const user_uuid = user.uuid;
+
+    const sql = `
+      SELECT
+          o.uuid,
+          o.order_code,
+          o.total_amount,
+          o.status,
+          o.created_at,
+          p.name AS product_name, 
+          pi.url AS main_image_url, 
+          oi.quantity, 
+          pv.size,
+          pv.color,
+          (SELECT SUM(quantity) FROM order_items WHERE order_uuid = o.uuid) AS total_items_count
+      FROM orders o
+      JOIN order_items oi ON o.uuid = oi.order_uuid
+      JOIN product_variants pv ON oi.variant_uuid = pv.uuid
+      JOIN products p ON pv.product_uuid = p.uuid
+      LEFT JOIN product_images pi ON p.uuid = pi.product_uuid AND pi.is_main = 1
+      WHERE o.user_uuid = ?
+      GROUP BY o.uuid 
+      ORDER BY o.created_at DESC
+    `;
+
+    const orders = await db.execute(sql, [user_uuid]);
+
+    return {
+      code: 200,
+      data: orders,
+    };
+  } catch (error) {
+    console.error("Lỗi khi lấy lịch sử đơn hàng:", error);
+    return {
+      code: 500,
+      message: "Lỗi server khi lấy lịch sử đơn hàng!",
+      error: error.message,
+    };
+  }
+}
+
+async function getOrderDetail(user, order_uuid) {
+  try {
+    if (!user || !user.uuid) {
+      return { code: 401, message: "Không tìm thấy thông tin người dùng." };
+    }
+    const user_uuid = user.uuid;
+
+    // --- CHẠY 2 CÂU LỆNH SQL CÙNG LÚC ---
+
+    // Câu 1: Lấy thông tin chung của đơn hàng VÀ thông tin địa chỉ
+    const sqlOrderInfo = `
+      SELECT
+          o.order_code,
+          o.total_amount,
+          o.subtotal,
+          o.shipping_fee,
+          o.discount,
+          o.status,
+          o.payment_method,
+          o.created_at,
+          v.code AS voucher_code,
+          ua.recipient_name,
+          ua.phone,
+          ua.province,
+          ua.district,
+          ua.address
+      FROM orders o
+      LEFT JOIN user_addresses ua ON o.address_uuid = ua.uuid
+      LEFT JOIN vouchers v ON o.voucher_uuid = v.uuid
+      WHERE o.uuid = ? AND o.user_uuid = ?
+    `;
+
+    // Câu 2: Lấy danh sách TẤT CẢ sản phẩm trong đơn hàng
+    const sqlOrderItems = `
+      SELECT 
+          oi.quantity, 
+          oi.price, 
+          p.name AS product_name, 
+          pi.url AS main_image_url, 
+          pv.size,
+          pv.color
+      FROM order_items oi
+      JOIN product_variants pv ON oi.variant_uuid = pv.uuid
+      JOIN products p ON pv.product_uuid = p.uuid
+      LEFT JOIN product_images pi ON p.uuid = pi.product_uuid AND pi.is_main = 1
+      WHERE oi.order_uuid = ?
+    `;
+
+    // Chạy song song 2 câu lệnh
+    const [orderInfoResult, itemsResult] = await Promise.all([
+      db.execute(sqlOrderInfo, [order_uuid, user_uuid]),
+      db.execute(sqlOrderItems, [order_uuid]),
+    ]);
+
+    if (orderInfoResult.length === 0) {
+      return { code: 404, message: "Không tìm thấy đơn hàng." };
+    }
+
+    const orderInfo = orderInfoResult[0];
+    const items = itemsResult;
+
+    // Gộp 2 kết quả lại
+    const fullDetail = {
+      ...orderInfo, // Lấy tất cả thông tin đơn hàng
+      items: items, // Thêm danh sách sản phẩm vào
+    };
+
+    return {
+      code: 200,
+      data: fullDetail,
+    };
+  } catch (error) {
+    console.error("Lỗi khi lấy chi tiết đơn hàng:", error);
+    return {
+      code: 500,
+      message: "Lỗi server khi lấy chi tiết đơn hàng!",
+      error: error.message,
+    };
+  }
+}
+
+async function cancelOrder(user, order_uuid) {
+  let connection;
+  try {
+    if (!user || !user.uuid) {
+      return { code: 401, message: "Không tìm thấy thông tin người dùng." };
+    }
+    const user_uuid = user.uuid;
+
+    connection = await db.pool.getConnection();
+    await connection.beginTransaction();
+
+    // 1. Lấy trạng thái hiện tại của đơn hàng
+    const [orderRows] = await connection.execute(
+      "SELECT status FROM orders WHERE uuid = ? AND user_uuid = ?",
+      [order_uuid, user_uuid]
+    );
+
+    if (orderRows.length === 0) {
+      await connection.rollback();
+      return { code: 404, message: "Không tìm thấy đơn hàng." };
+    }
+
+    const currentStatus = orderRows[0].status;
+
+    // 2. Kiểm tra điều kiện hủy
+    if (currentStatus === "shipping" || currentStatus === "delivered") {
+      await connection.rollback();
+      return {
+        code: 400,
+        message: "Đơn hàng đang giao hoặc đã giao, không thể hủy.",
+      };
+    }
+    if (currentStatus === "cancelled") {
+      await connection.rollback();
+      return { code: 400, message: "Đơn hàng này đã được hủy trước đó." };
+    }
+
+    // 3. Cập nhật trạng thái
+    const updateSql = "UPDATE orders SET status = 'cancelled' WHERE uuid = ?";
+    await connection.execute(updateSql, [order_uuid]);
+
+    await connection.commit();
+
+    return {
+      code: 200,
+      message: "Hủy đơn hàng thành công.",
+      data: {
+        new_status: "cancelled",
+      },
+    };
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Lỗi khi hủy đơn hàng:", error);
+    return {
+      code: 500,
+      message: "Lỗi server khi hủy đơn hàng!",
+      error: error.message,
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 module.exports = {
   createOrder,
+  getOrderHistory,
+  getOrderDetail,
+  cancelOrder,
 };
