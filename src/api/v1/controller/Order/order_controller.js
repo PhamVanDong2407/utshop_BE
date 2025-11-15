@@ -325,9 +325,73 @@ async function cancelOrder(user, order_uuid) {
   }
 }
 
+async function reOrder(user, order_uuid) {
+  let connection;
+  try {
+    if (!user || !user.uuid) {
+      return { code: 401, message: "Không tìm thấy thông tin người dùng." };
+    }
+    const user_uuid = user.uuid;
+
+    connection = await db.pool.getConnection();
+    await connection.beginTransaction();
+
+    // 1. Lấy tất cả sản phẩm từ đơn hàng cũ (phải đảm bảo user sở hữu đơn này)
+    const sqlGetItems = `
+      SELECT oi.variant_uuid, oi.quantity 
+      FROM order_items oi
+      JOIN orders o ON oi.order_uuid = o.uuid
+      WHERE oi.order_uuid = ? AND o.user_uuid = ?
+    `;
+    const [itemsToReorder] = await connection.execute(sqlGetItems, [
+      order_uuid,
+      user_uuid,
+    ]);
+
+    if (itemsToReorder.length === 0) {
+      await connection.rollback();
+      return { code: 404, message: "Không tìm thấy sản phẩm trong đơn hàng." };
+    }
+
+    // 2. Thêm lại vào giỏ hàng
+    // Dùng INSERT ... ON DUPLICATE KEY UPDATE để cộng dồn số lượng
+    const sqlInsertCart = `
+      INSERT INTO user_cart (user_uuid, variant_uuid, quantity) 
+      VALUES ? 
+      ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity)
+    `;
+
+    const cartData = itemsToReorder.map((item) => [
+      user_uuid,
+      item.variant_uuid,
+      item.quantity,
+    ]);
+
+    await connection.query(sqlInsertCart, [cartData]);
+
+    await connection.commit();
+
+    return {
+      code: 200,
+      message: `Đã thêm ${itemsToReorder.length} sản phẩm vào giỏ hàng.`,
+    };
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Lỗi khi mua lại đơn hàng:", error);
+    return {
+      code: 500,
+      message: "Lỗi server khi mua lại đơn hàng!",
+      error: error.message,
+    };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 module.exports = {
   createOrder,
   getOrderHistory,
   getOrderDetail,
   cancelOrder,
+  reOrder,
 };

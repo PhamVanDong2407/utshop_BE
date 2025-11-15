@@ -35,13 +35,27 @@ router.get("/:uuid", checkLogin, async (req, res, next) => {
 
 // HỦY ĐƠN HÀNG
 router.post("/cancel/:uuid", checkLogin, async (req, res, next) => {
-    try {
-      // Dùng req.params.uuid để lấy uuid từ /:uuid
-      const result = await controller.cancelOrder(req.user, req.params.uuid);
-      res.status(result.code || 500).json(result);
-    } catch (error) {
-      next(error);
+  try {
+    // Dùng req.params.uuid để lấy uuid từ /:uuid
+    const result = await controller.cancelOrder(req.user, req.params.uuid);
+    res.status(result.code || 500).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Mua lại đơn hàng
+router.post("/re-order", checkLogin, async (req, res, next) => {
+  try {
+    const { order_uuid } = req.body; // App sẽ gửi order_uuid trong body
+    if (!order_uuid) {
+      return res.status(400).json({ code: 400, message: "Thiếu order_uuid" });
     }
-  });
+    const result = await controller.reOrder(req.user, order_uuid);
+    res.status(result.code || 500).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;
