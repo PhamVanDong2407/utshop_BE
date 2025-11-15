@@ -30,6 +30,7 @@ async function queryMultiple(sqlList, params) {
 }
 
 module.exports = {
+  pool: pool,
   execute,
   queryMultiple,
 };
