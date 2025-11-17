@@ -23,6 +23,47 @@ router.get("/", checkLogin, async (req, res, next) => {
   }
 });
 
+// ADMIN LẤY DANH SÁCH TẤT CẢ ĐƠN HÀNG
+router.get("/admin-list", checkLogin, async (req, res, next) => {
+  try {
+    const result = await controller.getAllOrders(req.user);
+    res.status(result.code || 500).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ADMIN LẤY CHI TIẾT ĐƠN HÀNG
+router.get("/admin/:uuid", checkLogin, async (req, res, next) => {
+  try {
+    const result = await controller.getOrderDetaiAdmin(
+      req.user,
+      req.params.uuid
+    );
+    res.status(result.code || 500).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ADMIN CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG
+router.post("/admin/status/:uuid", checkLogin, async (req, res, next) => {
+  try {
+    const { new_status } = req.body;
+    if (!new_status) {
+      return res.status(400).json({ code: 400, message: "Thiếu new_status" });
+    }
+    const result = await controller.updateOrderStatus(
+      req.user,
+      req.params.uuid,
+      new_status
+    );
+    res.status(result.code || 500).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // LẤY CHI TIẾT ĐƠN HÀNG
 router.get("/:uuid", checkLogin, async (req, res, next) => {
   try {

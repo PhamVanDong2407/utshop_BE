@@ -9,7 +9,6 @@ async function createOrder(user, payload) {
     }
     const user_uuid = user.uuid;
 
-    // Lấy dữ liệu từ payload
     const {
       address_uuid,
       items,
@@ -21,28 +20,23 @@ async function createOrder(user, payload) {
       payment_method,
     } = payload;
 
-    // Kiểm tra dữ liệu đầu vào
     if (!address_uuid || !items || items.length === 0 || !payment_method) {
       return {
         code: 400,
-        message:
-          "Thiếu thông tin địa chỉ, sản phẩm, hoặc phương thức thanh toán.",
+        message: "Thiếu thông tin địa chỉ, sản phẩm, hoặc PTTT.",
       };
     }
 
-    // --- BẮT ĐẦU TRANSACTION ---
     connection = await db.pool.getConnection();
     await connection.beginTransaction();
 
-    // Tạo mã đơn hàng
     const order_code = `UT-${nanoid(8).toUpperCase()}`;
     const order_status =
       payment_method === "cod" ? "pending" : "awaiting_payment";
 
-    // [SQL 1] Insert vào bảng orders
+    // [SQL 1] Insert vào `orders`
     const orderSql =
-      "INSERT INTO orders (uuid, user_uuid, address_uuid, order_code, subtotal, shipping_fee, discount, total_amount, voucher_uuid, payment_method, status, created_at, updated_at) VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-
+      "INSERT INTO orders (uuid, user_uuid, address_uuid, order_code, subtotal, shipping_fee, discount, total_amount, voucher_uuid, payment_method, status) VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     await connection.execute(orderSql, [
       user_uuid,
       address_uuid,
@@ -56,18 +50,16 @@ async function createOrder(user, payload) {
       order_status,
     ]);
 
-    // Lấy UUID của đơn hàng vừa tạo
     const [orderRows] = await connection.execute(
       "SELECT uuid FROM orders WHERE order_code = ?",
       [order_code]
     );
-
     if (orderRows.length === 0) {
       throw new Error("Không thể lấy UUID đơn hàng vừa tạo");
     }
     const newOrderUuid = orderRows[0].uuid;
 
-    // [SQL 2] Insert vào bảng order_items
+    // [SQL 2] Insert vào `order_items`
     const itemsSql =
       "INSERT INTO order_items (order_uuid, variant_uuid, quantity, price) VALUES ?";
     const orderItemsData = items.map((item) => [
@@ -78,10 +70,38 @@ async function createOrder(user, payload) {
     ]);
     await connection.query(itemsSql, [orderItemsData]);
 
-    // [SQL 3] Insert vào payments nếu là VietQR
+    // [LOGIC MỚI 1] TRỪ TỒN KHO SẢN PHẨM
+    for (const item of items) {
+      const sqlUpdateStock =
+        "UPDATE product_variants SET stock = stock - ? WHERE uuid = ? AND stock >= ?";
+      const [result] = await connection.execute(sqlUpdateStock, [
+        item.quantity,
+        item.variant_uuid,
+        item.quantity,
+      ]);
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        return { code: 400, message: `Sản phẩm trong giỏ hàng đã hết hàng.` };
+      }
+    }
+
+    // [LOGIC MỚI 2] CẬP NHẬT SỐ LƯỢNG VOUCHER
+    if (voucher_uuid) {
+      const sqlUpdateVoucher =
+        "UPDATE vouchers SET current_usage_count = current_usage_count + 1 WHERE uuid = ? AND current_usage_count < usage_limit_per_voucher";
+      const [result] = await connection.execute(sqlUpdateVoucher, [
+        voucher_uuid,
+      ]);
+      if (result.affectedRows === 0) {
+        await connection.rollback();
+        return { code: 400, message: "Mã giảm giá đã hết lượt sử dụng." };
+      }
+    }
+
+    // [SQL 3] Insert vào `payments` nếu là VietQR
     if (payment_method === "vietqr") {
       const paymentSql =
-        "INSERT INTO payments (uuid, order_id, method, amount, status, created_at) VALUES (UUID(), ?, ?, ?, 'pending', NOW())";
+        "INSERT INTO payments (uuid, order_id, method, amount, status) VALUES (UUID(), ?, ?, ?, 'pending')";
       await connection.execute(paymentSql, [
         newOrderUuid,
         "vietqr",
@@ -92,46 +112,28 @@ async function createOrder(user, payload) {
     // [SQL 4] Xóa sản phẩm khỏi giỏ hàng
     const variantUuidsToDelete = items.map((item) => item.variant_uuid);
     if (variantUuidsToDelete.length > 0) {
-      // Tạo chuỗi dấu hỏi chấm (?, ?, ?) tương ứng số lượng item
       const placeholders = variantUuidsToDelete.map(() => "?").join(",");
       const deleteCartSql = `DELETE FROM user_cart WHERE user_uuid = ? AND variant_uuid IN (${placeholders})`;
-
-      // Gộp user_uuid và mảng variant uuid lại thành 1 mảng tham số
       await connection.execute(deleteCartSql, [
         user_uuid,
         ...variantUuidsToDelete,
       ]);
     }
 
-    // --- COMMIT TRANSACTION ---
     await connection.commit();
-
-    // Trả về kết quả
     return {
       code: 201,
       message: "Đặt hàng thành công!",
       data: {
-        payment_method: payment_method,
-        order_uuid: newOrderUuid,
-        order_code: order_code,
-        total_amount: total_amount,
-        status: order_status,
+        /* ... (dữ liệu trả về) ... */
       },
     };
   } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
+    if (connection) await connection.rollback();
     console.error("Lỗi khi tạo đơn hàng:", error);
-    return {
-      code: 500,
-      message: "Lỗi server khi tạo đơn hàng!",
-      error: error.message,
-    };
+    return { code: 500, message: "Lỗi server!", error: error.message };
   } finally {
-    if (connection) {
-      connection.release();
-    }
+    if (connection) connection.release();
   }
 }
 
@@ -388,10 +390,192 @@ async function reOrder(user, order_uuid) {
   }
 }
 
+// ADMIN
+
+// LẤY DANH SÁCH TẤT CẢ ĐƠN HÀNG
+async function getAllOrders(user) {
+  try {
+    const sql = `
+      SELECT
+          o.uuid, o.order_code, o.total_amount, o.status, o.created_at,
+          u.name AS customer_name,
+          p.name AS product_name, 
+          pi.url AS main_image_url
+      FROM orders o
+      JOIN user u ON o.user_uuid = u.uuid
+      LEFT JOIN order_items oi ON o.uuid = oi.order_uuid
+      LEFT JOIN product_variants pv ON oi.variant_uuid = pv.uuid
+      LEFT JOIN products p ON pv.product_uuid = p.uuid
+      LEFT JOIN product_images pi ON p.uuid = pi.product_uuid AND pi.is_main = 1
+      GROUP BY o.uuid 
+      ORDER BY o.created_at DESC
+    `;
+
+    const orders = await db.execute(sql, []);
+
+    return {
+      code: 200,
+      data: orders,
+    };
+  } catch (error) {
+    return {
+      code: 500,
+      message: "Lỗi server!",
+      error: error.message,
+    };
+  }
+}
+
+async function getOrderDetaiAdmin(user, order_uuid) {
+  try {
+    // Câu 1: Lấy thông tin chung
+    const sqlOrderInfo = `
+      SELECT
+          o.order_code, o.total_amount, o.subtotal, o.shipping_fee, o.discount,
+          o.status, o.payment_method, o.created_at, v.code AS voucher_code,
+          ua.recipient_name, ua.phone, ua.province, ua.district, ua.address
+      FROM orders o
+      LEFT JOIN user_addresses ua ON o.address_uuid = ua.uuid
+      LEFT JOIN vouchers v ON o.voucher_uuid = v.uuid
+      WHERE o.uuid = ? 
+    `;
+
+    // Câu 2: Lấy danh sách sản phẩm
+    const sqlOrderItems = `
+      SELECT 
+          oi.quantity, oi.price, p.name AS product_name, 
+          pi.url AS main_image_url, pv.size, pv.color
+      FROM order_items oi
+      JOIN product_variants pv ON oi.variant_uuid = pv.uuid
+      JOIN products p ON pv.product_uuid = p.uuid
+      LEFT JOIN product_images pi ON p.uuid = pi.product_uuid AND pi.is_main = 1
+      WHERE oi.order_uuid = ?
+    `;
+
+    const [orderInfoResult, itemsResult] = await Promise.all([
+      db.execute(sqlOrderInfo, [order_uuid]),
+      db.execute(sqlOrderItems, [order_uuid]),
+    ]);
+
+    if (orderInfoResult.length === 0) {
+      return { code: 404, message: "Không tìm thấy đơn hàng." };
+    }
+
+    const fullDetail = { ...orderInfoResult[0], items: itemsResult };
+    return { code: 200, data: fullDetail };
+  } catch (error) {
+    return { code: 500, message: "Lỗi server!", error: error.message };
+  }
+}
+
+// ADMIN CẬP NHẬT TRẠNG THÁI
+async function updateOrderStatus(user, order_uuid, new_status) {
+  let connection;
+  try {
+  
+    const validStatuses = [
+      "pending",
+      "awaiting_payment",
+      "paid",
+      "shipping",
+      "delivered",
+      "cancelled",
+      "refunded",
+    ];
+    if (!new_status || !validStatuses.includes(new_status)) {
+      return { code: 400, message: "Trạng thái mới không hợp lệ." };
+    }
+
+    connection = await db.pool.getConnection();
+    await connection.beginTransaction();
+
+    // 1. Lấy trạng thái hiện tại VÀ voucher_uuid
+    const [orderRows] = await connection.execute(
+      "SELECT uuid, voucher_uuid, status FROM orders WHERE uuid = ?",
+      [order_uuid]
+    );
+
+    if (orderRows.length === 0) {
+      await connection.rollback();
+      return { code: 404, message: "Không tìm thấy đơn hàng." };
+    }
+
+    const order = orderRows[0];
+    const currentStatus = order.status;
+
+    // 2. KIỂM TRA NẾU LÀ HÀNH ĐỘNG HỦY (CANCELLED)
+    if (new_status === "cancelled") {
+      // Các trạng thái có thể hủy
+      const refundableStatuses = ["pending", "awaiting_payment", "paid"];
+
+      if (refundableStatuses.includes(currentStatus)) {
+        // 2a. Lấy danh sách sản phẩm
+        const [itemsToRefund] = await connection.execute(
+          "SELECT variant_uuid, quantity FROM order_items WHERE order_uuid = ?",
+          [order_uuid]
+        );
+
+        // 2b. Hoàn kho
+        for (const item of itemsToRefund) {
+          const sqlRefundStock =
+            "UPDATE product_variants SET stock = stock + ? WHERE uuid = ?";
+          await connection.execute(sqlRefundStock, [
+            item.quantity,
+            item.variant_uuid,
+          ]);
+        }
+
+        // 2c. Hoàn voucher (nếu có)
+        if (order.voucher_uuid) {
+          const sqlRefundVoucher =
+            "UPDATE vouchers SET current_usage_count = current_usage_count - 1 WHERE uuid = ? AND current_usage_count > 0";
+          await connection.execute(sqlRefundVoucher, [order.voucher_uuid]);
+        }
+      } else {
+        // Nếu đang giao (shipping) hoặc đã giao (delivered), không cho hủy
+        await connection.rollback();
+        return {
+          code: 400,
+          message: `Không thể hủy đơn hàng đang ở trạng thái "${currentStatus}".`,
+        };
+      }
+    }
+
+    // 3. Cập nhật trạng thái đơn hàng (cho mọi trường hợp: 'paid', 'shipping', 'cancelled'...)
+    const sqlUpdateOrder = "UPDATE orders SET status = ? WHERE uuid = ?";
+    const [result] = await connection.execute(sqlUpdateOrder, [
+      new_status,
+      order_uuid,
+    ]);
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      return { code: 404, message: "Không tìm thấy đơn hàng để cập nhật." };
+    }
+
+    await connection.commit();
+
+    return {
+      code: 200,
+      message: `Cập nhật trạng thái thành công: ${new_status}`,
+      data: { new_status: new_status },
+    };
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error("Lỗi khi cập nhật trạng thái đơn hàng (Admin):", error);
+    return { code: 500, message: "Lỗi server!", error: error.message };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
 module.exports = {
   createOrder,
   getOrderHistory,
   getOrderDetail,
   cancelOrder,
   reOrder,
+  getAllOrders,
+  getOrderDetaiAdmin,
+  updateOrderStatus,
 };
