@@ -14,5 +14,6 @@ router.use("/delivery_address", require("./routes/DeliveryAddress/delivery_addre
 router.use("/cart", require("./routes/Cart/cart"));
 router.use("/order", require("./routes/Order/order"));
 router.use("/reveune", require("./routes/Reveune/reveune"));
+router.use("/dashboard", require("./routes/Dashboard/dashboard"));
 
 module.exports = router;
