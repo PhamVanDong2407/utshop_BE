@@ -10,14 +10,8 @@ async function createOrder(user, payload) {
     const user_uuid = user.uuid;
 
     const {
-      address_uuid,
-      items,
-      voucher_uuid,
-      subtotal,
-      shipping_fee,
-      discount,
-      total_amount,
-      payment_method,
+      address_uuid, items, voucher_uuid,
+      subtotal, shipping_fee, discount, total_amount, payment_method,
     } = payload;
 
     if (!address_uuid || !items || items.length === 0 || !payment_method) {
@@ -35,24 +29,15 @@ async function createOrder(user, payload) {
       payment_method === "cod" ? "pending" : "awaiting_payment";
 
     // [SQL 1] Insert vào `orders`
-    const orderSql =
-      "INSERT INTO orders (uuid, user_uuid, address_uuid, order_code, subtotal, shipping_fee, discount, total_amount, voucher_uuid, payment_method, status) VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    const orderSql = "INSERT INTO orders (uuid, user_uuid, address_uuid, order_code, subtotal, shipping_fee, discount, total_amount, voucher_uuid, payment_method, status, created_at, updated_at) VALUES (UUID(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+    
     await connection.execute(orderSql, [
-      user_uuid,
-      address_uuid,
-      order_code,
-      subtotal,
-      shipping_fee,
-      discount,
-      total_amount,
-      voucher_uuid || null,
-      payment_method,
-      order_status,
+      user_uuid, address_uuid, order_code, subtotal, shipping_fee,
+      discount, total_amount, voucher_uuid || null, payment_method, order_status,
     ]);
 
     const [orderRows] = await connection.execute(
-      "SELECT uuid FROM orders WHERE order_code = ?",
-      [order_code]
+      "SELECT uuid FROM orders WHERE order_code = ?", [order_code]
     );
     if (orderRows.length === 0) {
       throw new Error("Không thể lấy UUID đơn hàng vừa tạo");
@@ -60,74 +45,66 @@ async function createOrder(user, payload) {
     const newOrderUuid = orderRows[0].uuid;
 
     // [SQL 2] Insert vào `order_items`
-    const itemsSql =
-      "INSERT INTO order_items (order_uuid, variant_uuid, quantity, price) VALUES ?";
+    const itemsSql = "INSERT INTO order_items (order_uuid, variant_uuid, quantity, price) VALUES ?";
     const orderItemsData = items.map((item) => [
-      newOrderUuid,
-      item.variant_uuid,
-      item.quantity,
-      item.price,
+      newOrderUuid, item.variant_uuid, item.quantity, item.price,
     ]);
     await connection.query(itemsSql, [orderItemsData]);
 
-    // [LOGIC MỚI 1] TRỪ TỒN KHO SẢN PHẨM
+    // [LOGIC 1] TRỪ TỒN KHO SẢN PHẨM
     for (const item of items) {
-      const sqlUpdateStock =
-        "UPDATE product_variants SET stock = stock - ? WHERE uuid = ? AND stock >= ?";
+      const sqlUpdateStock = "UPDATE product_variants SET stock = stock - ? WHERE uuid = ? AND stock >= ?";
       const [result] = await connection.execute(sqlUpdateStock, [
-        item.quantity,
-        item.variant_uuid,
-        item.quantity,
+        item.quantity, 
+        item.variant_uuid, 
+        item.quantity
       ]);
       if (result.affectedRows === 0) {
-        await connection.rollback();
+        await connection.rollback(); 
         return { code: 400, message: `Sản phẩm trong giỏ hàng đã hết hàng.` };
       }
     }
 
-    // [LOGIC MỚI 2] CẬP NHẬT SỐ LƯỢNG VOUCHER
+    // [LOGIC 2] CẬP NHẬT SỐ LƯỢNG VOUCHER
     if (voucher_uuid) {
-      const sqlUpdateVoucher =
-        "UPDATE vouchers SET current_usage_count = current_usage_count + 1 WHERE uuid = ? AND current_usage_count < usage_limit_per_voucher";
-      const [result] = await connection.execute(sqlUpdateVoucher, [
-        voucher_uuid,
-      ]);
+      const sqlUpdateVoucher = "UPDATE vouchers SET current_usage_count = current_usage_count + 1 WHERE uuid = ? AND current_usage_count < usage_limit_per_voucher";
+      const [result] = await connection.execute(sqlUpdateVoucher, [voucher_uuid]);
       if (result.affectedRows === 0) {
-        await connection.rollback();
+        await connection.rollback(); 
         return { code: 400, message: "Mã giảm giá đã hết lượt sử dụng." };
       }
     }
 
     // [SQL 3] Insert vào `payments` nếu là VietQR
     if (payment_method === "vietqr") {
-      const paymentSql =
-        "INSERT INTO payments (uuid, order_id, method, amount, status) VALUES (UUID(), ?, ?, ?, 'pending')";
+      const paymentSql = "INSERT INTO payments (uuid, order_id, method, amount, status) VALUES (UUID(), ?, ?, ?, 'pending')";
       await connection.execute(paymentSql, [
-        newOrderUuid,
-        "vietqr",
-        total_amount,
+        newOrderUuid, "vietqr", total_amount,
       ]);
     }
 
     // [SQL 4] Xóa sản phẩm khỏi giỏ hàng
     const variantUuidsToDelete = items.map((item) => item.variant_uuid);
     if (variantUuidsToDelete.length > 0) {
-      const placeholders = variantUuidsToDelete.map(() => "?").join(",");
-      const deleteCartSql = `DELETE FROM user_cart WHERE user_uuid = ? AND variant_uuid IN (${placeholders})`;
-      await connection.execute(deleteCartSql, [
-        user_uuid,
-        ...variantUuidsToDelete,
-      ]);
+        const placeholders = variantUuidsToDelete.map(() => "?").join(",");
+        const deleteCartSql = `DELETE FROM user_cart WHERE user_uuid = ? AND variant_uuid IN (${placeholders})`;
+        await connection.execute(deleteCartSql, [user_uuid, ...variantUuidsToDelete]);
     }
 
     await connection.commit();
+
     return {
       code: 201,
       message: "Đặt hàng thành công!",
       data: {
-        /* ... (dữ liệu trả về) ... */
+        payment_method: payment_method, 
+        order_uuid: newOrderUuid,
+        order_code: order_code,
+        total_amount: total_amount,
+        status: order_status,
       },
     };
+
   } catch (error) {
     if (connection) await connection.rollback();
     console.error("Lỗi khi tạo đơn hàng:", error);
